@@ -62,7 +62,3 @@ Choose a valid task_id/suite_id comination from openml_suite_tasks.csv.
 | **OSError: Read-only file system** | Script trying to write to `/opt` or default cache. | Ensure `XDG_CACHE_HOME` is set in the Apptainer command. |
 | **Connection refused (GitHub/OpenML)** | Running internet commands on Compute Node. | Move that step to Phase 1 (Login Node). |
 | **SMACSampler missing argument: search_space** | SMAC needs params upfront. | Define `search_space = {...}` dictionary in your Python script. |
-
-## Final Workflow:
-To run an experiment, download the dataset into your cache with the find_url.sh script, where you have to edit
-[TODO...]
