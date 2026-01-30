@@ -11,7 +11,7 @@ This repository is structured into a couple sections:
 - /tabpfn_weights/v2.5 has to be populated with the TabPFN model's weights. These can be downloaded on their HuggingFace page. 
 
 # Building/Using Containers
-The SMAC_optuna.sif container can either be downloaded from [TODO: ZENODO URL HERE], or it can be built from scratch using the SMAC_pip.def file.
+The SMAC_optuna.sif container can either be downloaded from (https://zenodo.org/records/18431873), or it can be built from scratch using the SMAC_pip.def file.
 
 # Setting up the SMAC Sampler on Euler
 Note the architecture of containers on Euler:
