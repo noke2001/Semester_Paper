@@ -2,7 +2,7 @@ from huggingface_hub import hf_hub_download
 import os
 
 # 1. PASTE YOUR TOKEN HERE
-MY_TOKEN = "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" 
+MY_TOKEN = "hf_..." #replace with your actual token
 
 print("Starting download to global Hugging Face cache...")
 
