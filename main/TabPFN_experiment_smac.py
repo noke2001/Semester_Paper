@@ -38,7 +38,6 @@ from src.models.TabPFN_model import (
 
 # --- experiment constants ---
 SEED = 10
-smplr = "SMAC" # "TPE" ... [more can be added later]
 
 # --- suite configuration ---
 SUITE_CONFIG = {

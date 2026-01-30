@@ -8,7 +8,7 @@ This repository is structured into a couple sections:
 - /main/helper_functions/ contains all sorts of useful functions such as the download_data.py function above.
 - /main/src/ contains all the wrappers for the models used in the experiments.
 - /openml_cache/ contains all the local cache required for the apptainer to run these models locally.
-- /tabpfn_weights/v2.5 has to be populated with the TabPFN model's weights. These can be downloaded on their HuggingFace page. 
+- /tabpfn_weights/v2.5 has to be populated with the TabPFN model's weights. These can be downloaded on their HuggingFace page. Note that you may need to update the paths in the run_pfn_[exp/suite].sh script.
 
 # Building/Using Containers
 The SMAC_optuna.sif container can either be downloaded from (https://zenodo.org/records/18431873), or it can be built from scratch using the SMAC_pip.def file.
