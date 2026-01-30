@@ -1,0 +1,123 @@
+Bootstrap: docker
+# CHANGE 1: Use the NVIDIA CUDA Devel image to get the 'nvcc' compiler
+From: nvidia/cuda:11.8.0-devel-ubuntu22.04
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+    export XDG_CACHE_HOME=/opt/optunahub_cache
+    # Ensure CUDA paths are visible (standard for this base image, but good practice)
+    export CUDA_HOME=/usr/local/cuda
+
+%post
+    # i. Create directories
+    mkdir -p /tmp /var/tmp /opt/build_tmp /opt/optunahub_cache
+    chmod 1777 /tmp /var/tmp
+
+    # 1. Update and install core system dependencies
+    apt-get update
+    apt-get -y upgrade
+
+    export DEBIAN_FRONTEND=noninteractive
+    export TMPDIR=/opt/build_tmp
+
+    # Note: We keep OpenCL headers (ocl-icd) just in case you have other tools needing them, 
+    # but LightGBM will now use the CUDA toolkit provided by the base image.
+    apt-get install -y \
+        python3 \
+        python3-pip \
+        python3-dev \
+        build-essential \
+        cmake \
+        git \
+        swig \
+        wget \
+        ca-certificates \
+        libopenblas-dev \
+        liblzma-dev \
+        libbz2-dev \
+        libicu-dev \
+        gfortran \
+        libomp-dev \
+        libboost-dev \
+        libboost-system-dev \
+        libboost-filesystem-dev \
+        ocl-icd-opencl-dev \
+        opencl-headers \
+        r-base \
+        r-base-dev \
+        r-cran-devtools
+
+    update-alternatives --install /usr/bin/python python /usr/bin/python3 1
+    /usr/bin/python3 -m pip install --upgrade pip
+
+    # 2. Install Prerequisites
+    /usr/bin/python3 -m pip install --no-cache-dir "numpy<2.0.0" cffi rpy2
+
+    # 3. CRITICAL Fix: Install Torch < 2.0 FIRST
+    /usr/bin/python3 -m pip install --no-cache-dir "torch>=1.12.0,<2.0.0" "torchvision<0.15.0"
+
+    # 4. Install Neural Foundations
+    /usr/bin/python3 -m pip install --no-cache-dir rtdl delu rtdl_revisiting_models engression
+
+    # 5. Install Git Extensions
+    /usr/bin/python3 -m pip install --no-cache-dir --no-build-isolation \
+        "git+https://github.com/lorismichel/drf.git@87247a7803497d75f0bc61c95ace9310f56a3bad#egg=drf&subdirectory=python-package"
+    /usr/bin/python3 -m pip install --no-cache-dir \
+        "git+https://github.com/PriorLabs/tabpfn-extensions@d44606e35f89e18b6bc4c4a2eef2f46918c4302e#egg=tabpfn_extensions"
+
+    # 6. Install General Dependencies
+    # (Removed 'lightgbmlss' from here if it forces a reinstall of standard lightgbm, 
+    # strictly speaking it should be fine, but be aware of version conflicts).
+    /usr/bin/python3 -m pip install --no-cache-dir \
+        smac pytest openml scikit-learn scikit-learn-extra pandas scipy \
+        matplotlib seaborn alembic asttokens cloudpickle colorlog colour \
+        contourpy cycler decorator einops executing fonttools fsspec future \
+        gower gpboost greenlet huggingface-hub hyperopt idna ipython jedi \
+        Jinja2 kditransform kiwisolver Mako MarkupSafe \
+        matplotlib-inline mizani mpmath networkx opt_einsum optuna \
+        optuna-integration packaging parso patsy pexpect pillow plotnine \
+        progressbar2 properscoring prompt_toolkit ptyprocess pure_eval py4j \
+        pygam Pygments pyparsing pyro-api pyro-ppl PyYAML requests shap \
+        shapiq slicer SQLAlchemy stack-data statsmodels sympy tabpfn tqdm \
+        traitlets triton typing_extensions urllib3 wcwidth Bottleneck certifi \
+        distlib filelock joblib llvmlite numba numexpr platformdirs pycparser \
+        pynndescent python-dateutil pytz simplegeneric six threadpoolctl \
+        tzdata tzlocal umap-learn virtualenv lightgbmlss
+
+    # 7. CHANGE 2: Install CUDA-version of LightGBM (Manual Compilation)
+    # We clone and build manually to ensure NVCC is picked up correctly.
+    # The pip installation with config-settings can sometimes fail to find the CUDA 
+    # headers in Apptainer environments, so this is the "Roboust" method.
+    echo "--- Building LightGBM with CUDA ---"
+    cd /opt
+    git clone --recursive https://github.com/microsoft/LightGBM
+    cd LightGBM
+    mkdir build
+    cd build
+    cmake -DUSE_CUDA=1 ..
+    make -j$(nproc)
+    cd ../python-package
+    /usr/bin/python3 setup.py install
+    
+    # Cleanup LightGBM build artifacts to save space
+    cd /
+    rm -rf /opt/LightGBM
+
+    # 8. OptunaHub and SMAC Sampler
+    /usr/bin/python3 -m pip install --no-cache-dir optunahub
+    /usr/bin/python3 -m pip install -r https://hub.optuna.org/samplers/smac_sampler/requirements.txt
+
+    # 9. Pre-download SMAC Sampler
+    export XDG_CACHE_HOME=/opt/optunahub_cache
+    python3 -c 'import optunahub; optunahub.load_module("samplers/smac_sampler")'
+
+    # 10. Fix Permissions
+    chmod -R 777 /opt/optunahub_cache
+
+    # 11. Clean up
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+    rm -rf /opt/build_tmp
