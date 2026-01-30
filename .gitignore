@@ -1,0 +1,20 @@
+# Containers and Heavy Files
+SMAC_optuna.sif
+/main/original_data.tar
+*.ckpt
+
+# Logs and Locks
+*.log
+*.lock
+
+# Data but keep folder structure
+main/original_data/*
+!main/original_data/.gitkeep
+openml_cache/*
+
+# Results
+main/smac_results/*
+
+# Python environment
+venv/
+__pycache__/

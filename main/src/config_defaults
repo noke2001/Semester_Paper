@@ -1,0 +1,39 @@
+suite_config:
+  regression_numerical:
+    suite_id: 336
+    tasks: [361088]
+    type: regression
+    data: numerical
+  classification_numerical:
+    suite_id: 337
+    tasks: [361066]
+    type: classification
+    data: numerical
+
+splits:
+  numerical: [mahalanobis, kmeans, umap]
+  numerical_categorical: [gower, kmedoids, umap]
+
+models:
+  regression:
+    - name: lgbm
+      module: tree_models.LGBMRegressor
+      hyperparams: hyperparams/lgbm.yaml
+    - name: rf
+      module: tree_models.RandomForestRegressor
+      hyperparams: hyperparams/rf.yaml
+    - name: constant
+      module: baseline_models.ConstantPredictor
+      hyperparams: null
+    # …
+  classification:
+    - name: lgbm
+      module: tree_models.LGBMClassifier
+      hyperparams: hyperparams/lgbm_classif.yaml
+    - name: rf
+      module: tree_models.RandomForestClassifier
+      hyperparams: hyperparams/rf_classif.yaml
+    # …
+metrics:
+  regression: [rmse, crps]
+  classification: [accuracy, log_loss]
