@@ -13,13 +13,13 @@ This repository is structured into a couple sections:
 # Building/Using Containers
 The SMAC_optuna.sif container can either be downloaded from (https://zenodo.org/records/18431873), or it can be built from scratch using the SMAC_pip.def file. 
 > [!WARNING]
-> Before running any experiments or suites, make sure that you have the OpenCL drivers installed on your system in /etc/OpenCL/vendors.
-> Before running TabPFN experiments or suites, make sure that you have downloaded the weights from (https://huggingface.co/Prior-Labs/tabpfn_2_5/tree/main), and save them in the ./tabpfn_weights/ directory.
+> - Before running any experiments or suites, make sure that you have the OpenCL drivers installed on your system in /etc/OpenCL/vendors.
+> - Before running TabPFN experiments or suites, make sure that you have downloaded the weights from (https://huggingface.co/Prior-Labs/tabpfn_2_5/tree/main), and save them in the ./tabpfn_weights/ directory.
 
 Note that you can install the OpenCL drivers by running the following commands (here for ubuntu/debian):
 ```bash
-sudo apt-gat update
-sudo apt-gat install ocl-icd-libopencl1 opencl-headers clinfo
+sudo apt-get update
+sudo apt-get install ocl-icd-libopencl1 opencl-headers clinfo
 sudo apt-get install intel-opencl-icd # If no NVidia GPU
 sudo apt-get install nvidia-opencl-icd # If NVidia GPU available (recommended for deep-learning models)
 ```
