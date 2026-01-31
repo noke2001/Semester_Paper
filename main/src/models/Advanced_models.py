@@ -217,3 +217,125 @@ class GPBoostMulticlassClassifier(BaseEstimator, ClassifierMixin):
     def predict(self, X):
         proba = self.predict_proba(X)
         return np.argmax(proba, axis=1)
+
+# ——————————————
+# Safe GPBoost Wrappers (FIXED & DEBUGGED)
+# ——————————————
+
+class SafeGPBoostRegressor:
+    def __init__(self, *, cov_function="matern", cov_fct_shape=None,
+                 gp_approx="vecchia", likelihood="gaussian", trace=False, seed=10, **kw):
+        if cov_function != "matern" and cov_fct_shape is not None: cov_fct_shape = None
+        self.cov_function = cov_function
+        self.cov_fct_shape = cov_fct_shape
+        self.gp_approx     = gp_approx
+        self.likelihood    = likelihood
+        self.seed          = seed
+        self.kwargs        = kw
+        self._model        = None
+        self.trace         = trace 
+
+    def fit(self, X, y):
+        intercept = np.ones(len(y))
+        gp_kwargs = {
+            "gp_coords": X, "gp_approx": self.gp_approx,
+            "cov_function": self.cov_function, "likelihood": self.likelihood,
+            "seed": self.seed, **self.kwargs
+        }
+        if self.cov_function == "matern" and self.cov_fct_shape is not None:
+            gp_kwargs["cov_fct_shape"] = self.cov_fct_shape
+        
+        # Robust inducing points
+        if gp_kwargs.get("gp_approx") == "full_scale_vecchia":
+            n = len(y)
+            try:
+                X_cont = np.ascontiguousarray(X)
+                dtype = np.dtype((np.void, X_cont.dtype.itemsize * X_cont.shape[1]))
+                n_unique = len(np.unique(X_cont.view(dtype)))
+            except: n_unique = n
+            
+            limit = min(n, n_unique)
+            safe_ind = max(10, limit - 1) 
+            user_val = self.kwargs.get("num_ind_points", safe_ind)
+            gp_kwargs["num_ind_points"] = min(user_val, safe_ind)
+
+        self._model = gpb.GPModel(**gp_kwargs)
+        self._model.fit(y=y, X=intercept, params={"trace": self.trace}) 
+        return self
+
+    def predict(self, X, return_var=False):
+        intercept = np.ones(X.shape[0])
+        # Gaussian allows predict_response=True
+        out = self._model.predict(
+            gp_coords_pred=X, X_pred=intercept,
+            predict_var=return_var, predict_response=True
+        )
+        mu = out["mu"]
+        if return_var: return mu, out["var"]
+        return mu
+
+class SafeGPBoostClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, *, cov_function="matern", cov_fct_shape=None,
+                 gp_approx="vecchia", likelihood="bernoulli_logit", 
+                 matrix_inversion_method=None, trace=False, seed=10, **kw):
+        if cov_function != "matern" and cov_fct_shape is not None: cov_fct_shape = None
+        self.cov_function = cov_function
+        self.cov_fct_shape = cov_fct_shape
+        self.gp_approx     = gp_approx
+        self.likelihood    = likelihood
+        self.matrix_inversion_method = matrix_inversion_method
+        self.seed          = seed
+        self.kwargs        = kw
+        self._model        = None
+        self.trace         = trace
+
+    def fit(self, X, y):
+        intercept = np.ones(len(y))
+        method = self.matrix_inversion_method or "iterative"
+        if self.gp_approx == "fitc" and self.likelihood == "bernoulli_logit":
+            method = "cholesky"
+
+        gp_kwargs = {
+            "gp_coords": X, "gp_approx": self.gp_approx,
+            "cov_function": self.cov_function, "likelihood": self.likelihood,
+            "matrix_inversion_method": method, "seed": self.seed, **self.kwargs
+        }
+        if self.cov_function == "matern" and self.cov_fct_shape is not None:
+            gp_kwargs["cov_fct_shape"] = self.cov_fct_shape
+        
+        # Robust inducing points
+        if gp_kwargs.get("gp_approx") == "full_scale_vecchia":
+            n = len(y)
+            try:
+                X_cont = np.ascontiguousarray(X)
+                dtype = np.dtype((np.void, X_cont.dtype.itemsize * X_cont.shape[1]))
+                n_unique = len(np.unique(X_cont.view(dtype)))
+            except: n_unique = n
+            limit = min(n, n_unique)
+            safe_ind = max(10, limit - 1)
+            user_val = self.kwargs.get("num_ind_points", safe_ind)
+            gp_kwargs["num_ind_points"] = min(user_val, safe_ind)
+            
+        self._model = gpb.GPModel(**gp_kwargs)
+        self._model.fit(y=y, X=intercept, params={"trace": self.trace})
+        return self
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        intercept = np.ones((X.shape[0], 1))
+        
+        # --- CRITICAL FIX: FORCE FALSE ---
+        # This is the line that fixes the "Fatal Option" error.
+        out = self._model.predict(
+            gp_coords_pred=X, X_pred=intercept,
+            predict_var=False, predict_response=False 
+        )
+        mu_logits = out["mu"]
+        
+        # Manual Sigmoid
+        mu_logits = np.clip(mu_logits, -30, 30)
+        prob = 1.0 / (1.0 + np.exp(-mu_logits))
+        return np.vstack([1 - prob, prob]).T
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        proba = self.predict_proba(X)[:, 1]
+        return (proba > 0.5).astype(int)
