@@ -672,21 +672,17 @@ def main():
                     }
                     model = ModelClass(**p_drf)
                 
-                inp_tr = to_r_matrix(X_tr_p_np) if name == "DRF" else X_tr_p_np
-                out_tr = to_r_vector(y_tr_arr) if name == "DRF" else y_tr_arr
+                # DRF handles R conversion internally - just pass numpy arrays
+                inp_tr = X_tr_p_np
+                out_tr = y_tr_arr
                 
                 with redirect_stdout_to_stderr():
-                    if name == "DRF" and RPY2_AVAILABLE and localconverter:
-                          model.fit(inp_tr, out_tr)
-                    else:
-                          model.fit(inp_tr, out_tr)
+                    model.fit(inp_tr, out_tr)
 
                 if metric == 'CRPS':
                     if isinstance(model, DistributionalRandomForestRegressor):
-                        if RPY2_AVAILABLE and localconverter:
-                             yq = model.predict_quantiles(to_r_matrix(X_te_p_np), quantiles=to_r_vector(quantiles))
-                        else:
-                            yq = model.predict_quantiles(X_te_p_np, quantiles=quantiles)
+                        # DRF handles conversion internally - pass numpy arrays directly
+                        yq = model.predict_quantiles(X_te_p_np, quantiles=quantiles)
                         vals = crps_ensemble(y_te_arr, yq.quantile.squeeze(1))
                     else:
                         # Regressor Refit
