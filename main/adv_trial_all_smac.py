@@ -249,26 +249,26 @@ GPU_PARAMS_GPBOOST = {
 } if USE_GPU else {}
 
 # --- SEARCH SPACES ---
-def get_drf_space(n_samples):
+def get_drf_space(n_features):
     return {
-        'num_trees': IntDistribution(100, 500),
-        'max_depth': IntDistribution(1, 30),
-        'min_node_size': IntDistribution(10, 100),
-        'mtry_ratio': FloatDistribution(0.1, 1.0)
+        'n_estimators': IntDistribution(100, 500),
+        'mtry': IntDistribution(0, n_features),
+        'min_samples_leaf': IntDistribution(10, 100),
     }
 
 def get_lss_space(n_samples):
     safe_max_bin = max(256, n_samples)
     return {
-        "learning_rate": FloatDistribution(0.001, 1.0, log=True),
-        "min_child_samples": IntDistribution(1, 1000, log=True),
-        "reg_lambda": FloatDistribution(1e-8, 1000.0, log=True),
+        "learning_rate": FloatDistribution(0.0001, 0.5, log=True),
+        "n_estimators": IntDistribution(100, 500),
+        "reg_lambda": FloatDistribution(1e-8, 10.0, log=True),
+        "max_depth": IntDistribution(1, 30),
+        "min_child_samples": IntDistribution(10, 100),
+
         "max_bin": IntDistribution(255, safe_max_bin, log=True),
         "subsample": FloatDistribution(0.5, 1.0),
         "colsample_bytree": FloatDistribution(0.5, 1.0),
-        "max_depth": CategoricalDistribution([-1]),
         "num_leaves": IntDistribution(2, 1024, log=True),
-        "n_estimators": IntDistribution(100, 500)
     }
 
 def get_gpboost_space(n_samples):
@@ -277,6 +277,7 @@ def get_gpboost_space(n_samples):
     return {
         "cov_function": CategoricalDistribution(["matern", "gaussian"]),
         "cov_fct_shape": CategoricalDistribution([0.5, 1.5, 2.5]),
+        
         "num_neighbors": IntDistribution(lower_bound, upper_bound)
     }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os
 import glob
-import adv_trial
+import Repo.main.adv_trial_smac as adv_trial_smac
 from utils_exp import generate_base_command, generate_run_commands
 
 # ——— configuration ———
@@ -36,7 +36,7 @@ def main():
 
         # build the python command to call advanced_experiment.main()
         python_cmd = generate_base_command(
-            adv_trial,
+            adv_trial_smac,
             flags={
                 'suite_id':     suite_id,
                 'task_id':      task_id,
