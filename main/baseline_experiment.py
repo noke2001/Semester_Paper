@@ -2,23 +2,25 @@
 # src/experiments/baseline_experiment.py
 
 import argparse
+from multiprocessing.util import debug
 import os
 import random
+import traceback 
 
 import numpy as np
 import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import log_loss 
 import numba
 numba.config.DISABLE_JIT = True
-
 
 import time
 import contextlib
 
-
 # --- your loader & utils ---
-from src.loader import load_dataset_offline, clean_data, standardize_data
+from src.loader import load_dataset_offline, clean_data, standardize_data, prepare_for_split
 from src.new_extrapolation import (
     random_split,
     mahalanobis_split,
@@ -40,7 +42,10 @@ from src.models.Baseline_models import (
     ConstantPredictor
 )
 
+# --- configuration ---
 SEED = 10
+DEBUG = True
+MAX_SAMPLES = 50000
 
 SUITE_CONFIG = {
     "regression_numerical":            {"suite_id":336, "task_type":"regression",     "data_type":"numerical"},
@@ -61,7 +66,8 @@ def log_time(stage_name:str):
     t0 = time.perf_counter()
     yield
     t1 = time.perf_counter()
-    print(f"[TIMING] {stage_name}: {t1 - t0:.2f} seconds")
+    if DEBUG:
+        print(f"[TIMING] {stage_name}: {t1 - t0:.2f} seconds")
 
 def find_config(suite_id):
     for cfg in SUITE_CONFIG.values():
@@ -119,8 +125,6 @@ def main():
             raise ValueError(f"No split method named {args.split_method}")
 
 
-
-    MAX_SAMPLES = 10000
     if len(X_full) > MAX_SAMPLES:
         X_full, _, y_full, _= train_test_split(
             X_full, y_full, 
@@ -134,6 +138,34 @@ def main():
         task_type=cfg["task_type"]
     )
 
+    # --- FIX 1: Robust Shape Handling (Aggressive Flattening) ---
+    # We strip pandas/index structure immediately to ensure 1D numpy array
+    if isinstance(y, (pd.DataFrame, pd.Series)):
+        y = y.values
+    y = np.asarray(y).ravel() # Force (N,) shape
+    
+    # Store the index for later reconstruction
+    y_series_index = X_clean.index
+
+    label_encoder = None
+    all_classes_indices = None 
+
+    if not is_regression:
+        label_encoder = LabelEncoder()
+        # Pass the strictly flattened numpy array
+        y_encoded = label_encoder.fit_transform(y)
+        
+        # Determine all possible classes (0 to N-1)
+        num_classes = len(label_encoder.classes_)
+        all_classes_indices = np.arange(num_classes)
+        if DEBUG:
+            print(f"[DEBUG] Encoded labels: {num_classes} classes -> {all_classes_indices}")
+            
+        # Wrap back into Series for alignment during splitting
+        y = pd.Series(y_encoded, index=y_series_index)
+    else:
+        # For regression, just wrap the float array
+        y = pd.Series(y, index=y_series_index)
 
     if args.task_id in (361082, 361088, 361099) and is_regression:
         y = np.log(y)
@@ -143,49 +175,54 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, f"{args.suite_id}_{args.task_id}_baseline.csv")
 
+    X_ready = prepare_for_split(X_clean)
+    if X_ready.shape[1] == 0:
+        X_source = X if X.shape[1] > 0 else X_full.loc[y.index]
+        X_ready = pd.get_dummies(X_source, drop_first=True).astype('float32')
+    
+    X_ready.index = y.index
+
     if is_regression:
         model_constructors = [("LinearRegressor", LinearRegressor), ("ConstantPredictor", ConstantPredictor)]
     else:
         model_constructors = [("LogisticRegressor", LogisticRegressor), ("ConstantPredictor", ConstantPredictor)]
 
     records = []
-    import traceback
-
 
     for split_fn in methods:
         name_split = split_fn.__name__
-        print(f"\n---\n[DEBUG] About to run split: {name_split}")
-        print("  X_clean.shape =", X_clean.shape)
-        print("  X_clean.dtypes:\n", X_clean.dtypes.value_counts())
+        if DEBUG:
+            print(f"\n---\n[DEBUG] About to run split: {name_split}")
+            print("  X_ready.shape =", X_ready.shape)
+        
         with log_time(f"Splitting data with {name_split}"):
             try:
-                X_tr_clean, y_tr, X_te_clean, y_te = split_dataset(split_fn, X_clean, y)
+                X_tr_clean, y_tr, X_te_clean, y_te = split_dataset(split_fn, X_ready, y)
             except Exception as e:
                 print(f"[ERROR] {name_split} threw {type(e).__name__}: {e}")
                 traceback.print_exc()
                 continue
+        
         train_idx = X_tr_clean.index
         test_idx  = X_te_clean.index
 
-        print(f"[DEBUG] {name_split} →  train={len(X_tr_clean)}  test={len(X_te_clean)}")
+        if DEBUG:
+            print(f"[DEBUG] {name_split} ->  train={len(X_tr_clean)}  test={len(X_te_clean)}")
+        
         if len(X_tr_clean)==0 or len(X_te_clean)==0:
             print(f"[WARNING] {name_split} produced an empty split!  thresh may be wrong.")
 
         X_loop = X.copy()
-
         dummy_cols = X_loop.select_dtypes(include=['bool','category','object','string']).columns
         for col in dummy_cols:
             if X_loop[col].nunique() != X_loop.loc[train_idx, col].nunique():
                 X_loop = X_loop.drop(col, axis=1)
 
         if X_loop.shape[1] == 0:
-            print(f"Skipping {name_split} split for {args.suite_id}_{args.task_id}: no valid features left after dummy removal.")
+            print(f"Skipping {name_split} split: no valid features left.")
             continue
 
-        non_dummy_cols = X_loop.select_dtypes(
-            exclude=['bool','category','object','string']
-        ).columns.tolist()
-
+        non_dummy_cols = X_loop.select_dtypes(exclude=['bool','category','object','string']).columns.tolist()
         X_loop = pd.get_dummies(X_loop, drop_first=True).astype('float32')
 
         X_tr = X_loop.loc[train_idx]
@@ -203,7 +240,6 @@ def main():
                 model.fit(X_tr_p, y_tr_arr)
 
                 if is_regression:
-                    # regression metrics
                     y_pred_test = model.predict(X_te_p)
                     y_pred_train = model.predict(X_tr_p)
                     sigma = np.std(y_tr_arr - y_pred_train)
@@ -217,23 +253,44 @@ def main():
                         "metric": "CRPS", "value": evaluate_crps(y_te_arr, y_pred_test, sigma_arr)}
                     ])
                 else:
-                    # classification metrics
                     preds = model.predict(X_te_p)
                     probs = model.predict_proba(X_te_p)
+
+                    # --- FIX 2: Handle 1D probabilities & Padding for LogLoss ---
+                    
+                    # 1. Ensure probs is at least 2D (N, C)
+                    if probs.ndim == 1:
+                        probs = probs.reshape(-1, 1)
+
+                    # 2. Probability Padding
+                    if hasattr(model, "classes_"):
+                        full_probs = np.zeros((len(probs), len(all_classes_indices)))
+                        full_probs[:, model.classes_.astype(int)] = probs
+                        probs_final = full_probs
+                    else:
+                        # Fallback for ConstantPredictor without .classes_
+                        if probs.shape[1] != len(all_classes_indices):
+                            padded = np.zeros((len(probs), len(all_classes_indices)))
+                            cols = min(probs.shape[1], len(all_classes_indices))
+                            padded[:, :cols] = probs[:, :cols]
+                            probs_final = padded
+                        else:
+                            probs_final = probs
+
+                    ll_value = log_loss(y_te_arr, probs_final, labels=all_classes_indices)
+
                     records.extend([
                         {"suite_id": args.suite_id, "task_id": args.task_id,
                         "split_method": name_split, "model": mdl_name,
                         "metric": "Accuracy", "value": evaluate_accuracy(y_te_arr, preds)},
                         {"suite_id": args.suite_id, "task_id": args.task_id,
                         "split_method": name_split, "model": mdl_name,
-                        "metric": "LogLoss", "value": evaluate_log_loss(y_te_arr, probs)}
+                        "metric": "LogLoss", "value": ll_value}
                 ])
 
-    # save all results
     df = pd.DataFrame.from_records(records)
     df.to_csv(out_file, index=False)
     print(f"Saved baseline results to {out_file}")
-
 
 if __name__ == "__main__":
     main()

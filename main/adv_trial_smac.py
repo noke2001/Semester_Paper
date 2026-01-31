@@ -34,6 +34,7 @@ SEED      = 10
 N_TRIALS  = 100        # full 100 trials as in original paper
 VAL_RATIO = 0.2        # 20% for validation
 QUANTILE_SAMPLES = 100
+MAX_SAMPLES = 50000    # limit to 50k samples to align with TabPFN
 
 SUITE_CONFIG = {
     "regression_numerical":            {"suite_id":336, "task_type":"regression",     "data_type":"numerical"},
@@ -99,7 +100,6 @@ def main():
     
     methods = EXTRAPOLATION_METHODS[cfg["data_type"]]
 
-    MAX_SAMPLES = 10000
     if len(X_full) > MAX_SAMPLES:
         X_full, _, y_full, _ = train_test_split(
             X_full, y_full,
