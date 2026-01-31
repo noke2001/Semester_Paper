@@ -8,8 +8,8 @@
 #SBATCH --error=slurm_adv-%j.err
 
 # --- TASK CONFIGURATION ---
-TASK_ID="361093"
-SUITE_ID="335"
+TASK_ID="361110"
+SUITE_ID="334"
 
 # --- PATHS ---
 CACHE_PATH="./openml_cache"

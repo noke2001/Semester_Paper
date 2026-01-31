@@ -43,7 +43,10 @@ wget -O smac_sampler.py https://raw.githubusercontent.com/optuna/optunahub-regis
 from smac_sampler import SMACSampler
 ```
 
-### (iii) Install DRF package
+### (iii) Dowloading TabPFN weights
+Before running any TabPFN experiments, you have to either download the weights of the models off the Hugging Face website, or run the download_weights.py function. Note that you will have to provide a Hugging Face API key and update the python file.
+
+### (iv) Install DRF package
 Before running the adv exerpiments/suites, we have to use the helper function install_drf.py.
 Either do this in the apptainer, by launching the shell:
 ```bash
