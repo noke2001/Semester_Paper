@@ -339,3 +339,22 @@ class SafeGPBoostClassifier(BaseEstimator, ClassifierMixin):
     def predict(self, X: np.ndarray) -> np.ndarray:
         proba = self.predict_proba(X)[:, 1]
         return (proba > 0.5).astype(int)
+
+class SafeGPBoostMulticlassClassifier(BaseEstimator, ClassifierMixin):
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self._model = None
+        self._label_encoder = LabelEncoder()
+
+    def fit(self, X, y):
+        self._model = OneVsRestClassifier(SafeGPBoostClassifier(**self.kwargs))
+        y_encoded = self._label_encoder.fit_transform(y)
+        self._model.fit(X, y_encoded)
+        return self
+
+    def predict_proba(self, X):
+        return self._model.predict_proba(X)
+    
+    def predict(self, X):
+        proba = self.predict_proba(X)
+        return np.argmax(proba, axis=1)

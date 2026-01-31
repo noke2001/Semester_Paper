@@ -138,7 +138,7 @@ def main():
         task_type=cfg["task_type"]
     )
 
-    # --- FIX 1: Robust Shape Handling (Aggressive Flattening) ---
+    # --- Robust Shape Handling (Aggressive Flattening) ---
     # We strip pandas/index structure immediately to ensure 1D numpy array
     if isinstance(y, (pd.DataFrame, pd.Series)):
         y = y.values
@@ -256,8 +256,7 @@ def main():
                     preds = model.predict(X_te_p)
                     probs = model.predict_proba(X_te_p)
 
-                    # --- FIX 2: Handle 1D probabilities & Padding for LogLoss ---
-                    
+                    # --- Handle 1D probabilities & Padding for LogLoss ---
                     # 1. Ensure probs is at least 2D (N, C)
                     if probs.ndim == 1:
                         probs = probs.reshape(-1, 1)

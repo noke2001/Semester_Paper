@@ -15,6 +15,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import log_loss # <--- FIX: Import log_loss directly
 from properscoring import crps_gaussian, crps_ensemble
 
 # --- 1. PRE-IMPORT FIXES ---
@@ -131,8 +132,8 @@ from src.models.Advanced_models import (
     DistributionalRandomForestRegressor,
     LightGBMLSSRegressor,
     SafeGPBoostRegressor,
-    SafeGPBoostClassifier
-
+    SafeGPBoostClassifier,
+    SafeGPBoostMulticlassClassifier
 )
 
 # --- CONFIGURATION ---
@@ -159,16 +160,16 @@ def get_drf_space(n_features):
 def get_lss_space(n_samples):
     safe_max_bin = max(256, n_samples)
     return {
-        "learning_rate": FloatDistribution(0.0001, 0.5, log=True),
-        "n_estimators": IntDistribution(100, 500),
-        "reg_lambda": FloatDistribution(1e-8, 10.0, log=True),
-        "max_depth": IntDistribution(1, 30),
-        "min_child_samples": IntDistribution(10, 100),
+        'learning_rate': FloatDistribution(0.0001, 0.5, log=True),
+        'n_estimators': IntDistribution(100, 500),
+        'reg_lambda': FloatDistribution(1e-8, 10.0, log=True),
+        'max_depth': IntDistribution(1, 30),
+        'min_child_samples': IntDistribution(10, 100),
 
-        "max_bin": IntDistribution(255, safe_max_bin, log=True),
-        "subsample": FloatDistribution(0.5, 1.0),
-        "colsample_bytree": FloatDistribution(0.5, 1.0),
-        "num_leaves": IntDistribution(2, 1024, log=True),
+        'max_bin': IntDistribution(255, safe_max_bin, log=True),
+        'subsample': FloatDistribution(0.5, 1.0),
+        'colsample_bytree': FloatDistribution(0.5, 1.0),
+        'num_leaves': IntDistribution(2, 1024, log=True),
     }
 
 def get_gpboost_space(n_samples):
@@ -259,6 +260,22 @@ def main():
         )
 
     X, X_clean, y = clean_data(X_full, y_full, cat_ind, attr_names, task_type=cfg["task_type"])
+    
+    # --- FIX 1: Robust Shape Handling (Flattening) ---
+    if isinstance(y, (pd.DataFrame, pd.Series)):
+        y = y.values
+    y = np.asarray(y).ravel()
+    
+    # --- FIX 2: Label Encoding for Classification to support LogLoss Fix ---
+    all_classes_indices = None
+    if not is_reg:
+        le = LabelEncoder()
+        y = le.fit_transform(y)
+        all_classes_indices = np.arange(len(le.classes_))
+    
+    # Re-wrap in Series for index alignment during splitting
+    y = pd.Series(y, index=X_clean.index)
+
     if args.task_id in (361082, 361088, 361099) and is_reg: y = np.log(y)
 
     out_dir = os.path.join(args.result_folder, f"seed_{args.seed}")
@@ -314,6 +331,9 @@ def main():
 
         n_samples_train = X_train_np.shape[0]
         n_features = X_train_np.shape[1]
+        
+        # Check if binary or multi-class classification
+        is_binary = is_reg or len(np.unique(y_train_)) == 2
 
         # --- OBJECTIVE FUNCTIONS ---
         def obj_crps_drf(trial):
@@ -434,7 +454,7 @@ def main():
             
             try:
                 model = SafeGPBoostClassifier(
-                    gp_approx="full_scale_vecchia",
+                    gp_approx="vecchia",
                     cov_function=cov_function,
                     cov_fct_shape=cov_fct_shape,
                     matrix_inversion_method="iterative",
@@ -448,6 +468,8 @@ def main():
                 with redirect_stdout_to_stderr():
                     model.fit(X_train_np, y_train_)
                 probs = model.predict_proba(X_val_np)[:,1]
+                # LogLoss optimization is usually robust enough with standard metric, 
+                # refit is where we need safety.
                 score = evaluate_log_loss(y_val, probs)
                 del model; gc.collect()
                 return score
@@ -463,7 +485,7 @@ def main():
             
             try:
                 model = SafeGPBoostClassifier(
-                    gp_approx="full_scale_vecchia",
+                    gp_approx="vecchia", # 'full_scale_vecchia' fails in suite 379
                     cov_function=cov_function,
                     cov_fct_shape=cov_fct_shape,
                     matrix_inversion_method="iterative",
@@ -481,6 +503,81 @@ def main():
                 del model; gc.collect()
                 return score
             except Exception: return 0.0
+        
+        def obj_logloss_gpboost_multiclass(trial):
+            cov_function = trial.suggest_categorical("cov_function", ["matern", "gaussian"])
+            cov_fct_shape = trial.suggest_categorical("cov_fct_shape", [0.5, 1.5, 2.5])
+            if cov_function != "matern": cov_fct_shape = None
+            num_neighbors = trial.suggest_int("num_neighbors", 10, 60)
+
+            kwargs = GPU_PARAMS_GPBOOST.copy()
+            kwargs.update({
+                "gp_approx": "vecchia",
+                "cov_function": cov_function,
+                "cov_fct_shape": cov_fct_shape,
+                "matrix_inversion_method": "iterative",
+                "seed": args.seed,
+                "likelihood": "bernoulli_logit",
+                "num_neighbors": num_neighbors
+            })
+            
+            try:
+                model = SafeGPBoostMulticlassClassifier(**kwargs)
+                with redirect_stdout_to_stderr():
+                    model.fit(X_train_np, y_train_)
+                probs = model.predict_proba(X_val_np)
+                
+                # Pad probabilities if not all classes present in training
+                if probs.shape[1] < len(all_classes_indices):
+                    full_probs = np.zeros((len(probs), len(all_classes_indices)))
+                    if hasattr(model._model, 'classes_'):
+                        full_probs[:, model._model.classes_] = probs
+                    else:
+                        full_probs[:, :probs.shape[1]] = probs
+                    probs = full_probs
+                
+                score = float(log_loss(y_val, probs, labels=all_classes_indices))
+                del model; gc.collect()
+                return score
+            except Exception: return float('inf')
+            
+        def obj_acc_gpboost_multiclass(trial):
+            cov_function = trial.suggest_categorical("cov_function", ["matern", "gaussian"])
+            cov_fct_shape = trial.suggest_categorical("cov_fct_shape", [0.5, 1.5, 2.5])
+            if cov_function != "matern": cov_fct_shape = None
+            num_neighbors = trial.suggest_int("num_neighbors", 10, 60)
+
+            kwargs = GPU_PARAMS_GPBOOST.copy()
+            kwargs.update({
+                "gp_approx": "vecchia",
+                "cov_function": cov_function,
+                "cov_fct_shape": cov_fct_shape,
+                "matrix_inversion_method": "iterative",
+                "seed": args.seed,
+                "likelihood": "bernoulli_logit",
+                "num_neighbors": num_neighbors
+            })
+            
+            try:
+                model = SafeGPBoostMulticlassClassifier(**kwargs)
+                with redirect_stdout_to_stderr():
+                    model.fit(X_train_np, y_train_)
+                probs = model.predict_proba(X_val_np)
+                
+                # Pad probabilities if needed before argmax
+                if probs.shape[1] < len(all_classes_indices):
+                    full_probs = np.zeros((len(probs), len(all_classes_indices)))
+                    if hasattr(model._model, 'classes_'):
+                        full_probs[:, model._model.classes_] = probs
+                    else:
+                        full_probs[:, :probs.shape[1]] = probs
+                    probs = full_probs
+                
+                preds = np.argmax(probs, axis=1)
+                score = evaluate_accuracy(y_val, preds)
+                del model; gc.collect()
+                return score
+            except Exception: return 0.0
 
         tasks = []
         if is_reg:
@@ -489,8 +586,13 @@ def main():
             tasks.append(("GPBoost_CRPS", obj_crps_gpboost, 'minimize', 'CRPS', SafeGPBoostRegressor, get_gpboost_space(n_samples_train)))
             tasks.append(("GPBoost_RMSE", obj_rmse_gpboost, 'minimize', 'RMSE', SafeGPBoostRegressor, get_gpboost_space(n_samples_train)))
         else:
-            tasks.append(("GPBoost_LogLoss", obj_logloss_gpboost, 'minimize', 'LogLoss', SafeGPBoostClassifier, get_gpboost_space(n_samples_train)))
-            tasks.append(("GPBoost_Accuracy", obj_acc_gpboost, 'maximize', 'Accuracy', SafeGPBoostClassifier, get_gpboost_space(n_samples_train)))
+            # Use binary or multi-class GPBoost classifier depending on problem
+            if is_binary:
+                tasks.append(("GPBoost_LogLoss", obj_logloss_gpboost, 'minimize', 'LogLoss', SafeGPBoostClassifier, get_gpboost_space(n_samples_train)))
+                tasks.append(("GPBoost_Accuracy", obj_acc_gpboost, 'maximize', 'Accuracy', SafeGPBoostClassifier, get_gpboost_space(n_samples_train)))
+            else:
+                tasks.append(("GPBoost_LogLoss", obj_logloss_gpboost_multiclass, 'minimize', 'LogLoss', SafeGPBoostMulticlassClassifier, get_gpboost_space(n_samples_train)))
+                tasks.append(("GPBoost_Accuracy", obj_acc_gpboost_multiclass, 'maximize', 'Accuracy', SafeGPBoostMulticlassClassifier, get_gpboost_space(n_samples_train)))
         
         for name, obj_fn, direction, metric, ModelClass, search_space in tasks:
             tracker = ProgressTracker(m_idx, num_methods, args.n_trials, name, metric)
@@ -518,7 +620,6 @@ def main():
                     num_n = final_params["num_neighbors"]
                     
                     kwargs = {
-                        "gp_approx": "full_scale_vecchia",
                         "cov_function": cov_f,
                         "cov_fct_shape": cov_s,
                         "seed": args.seed,
@@ -528,12 +629,17 @@ def main():
                     kwargs.update(GPU_PARAMS_GPBOOST)
                     
                     if is_reg:
+                        kwargs["gp_approx"] = "full_scale_vecchia"
                         if metric == "CRPS": kwargs["likelihood"] = "gaussian"
                         model = SafeGPBoostRegressor(**kwargs)
                     else:
+                        kwargs["gp_approx"] = "vecchia"
                         kwargs["matrix_inversion_method"] = "iterative"
                         kwargs["likelihood"] = "bernoulli_logit"
-                        model = SafeGPBoostClassifier(**kwargs)
+                        if is_binary:
+                            model = SafeGPBoostClassifier(**kwargs)
+                        else:
+                            model = SafeGPBoostMulticlassClassifier(**kwargs)
                     
                     # Inject params
                     for k, v in kwargs.items(): setattr(model, k, v)
@@ -586,9 +692,57 @@ def main():
                     val = float(np.sqrt(np.mean((y_te_arr - preds)**2)))
                 elif metric == 'LogLoss':
                     probs = model.predict_proba(X_te_p_np)
-                    val = float(evaluate_log_loss(y_te_arr, probs[:,1] if probs.ndim==2 else probs))
+                    
+                    # --- FIX 3: Robust LogLoss Calculation (Padding) ---
+                    # SafeGPBoostMulticlassClassifier needs probability padding for missing classes
+                    if isinstance(model, SafeGPBoostMulticlassClassifier):
+                        if probs.shape[1] < len(all_classes_indices):
+                            full_probs = np.zeros((len(probs), len(all_classes_indices)))
+                            if hasattr(model._model, 'classes_'):
+                                full_probs[:, model._model.classes_] = probs
+                            else:
+                                full_probs[:, :probs.shape[1]] = probs
+                            probs = full_probs
+                        val = float(log_loss(y_te_arr, probs, labels=all_classes_indices))
+                    else:
+                        # 1. Handle 1D array from binary classifiers
+                        if probs.ndim == 1:
+                            probs = probs.reshape(-1, 1)
+
+                        # 2. Pad probabilities if classes are missing in training but present in test labels
+                        if hasattr(model, "classes_"):
+                             full_probs = np.zeros((len(probs), len(all_classes_indices)))
+                             try:
+                                 full_probs[:, model.classes_.astype(int)] = probs
+                                 probs_final = full_probs
+                             except:
+                                 probs_final = probs
+                        else:
+                            # Fallback padding if .classes_ is unavailable
+                            if probs.shape[1] != len(all_classes_indices):
+                                padded = np.zeros((len(probs), len(all_classes_indices)))
+                                cols = min(probs.shape[1], len(all_classes_indices))
+                                padded[:, :cols] = probs[:, :cols]
+                                probs_final = padded
+                            else:
+                                probs_final = probs
+
+                        # Use sklearn log_loss directly with known labels
+                        val = float(log_loss(y_te_arr, probs_final, labels=all_classes_indices))
+
                 elif metric == 'Accuracy':
-                    preds = model.predict(X_te_p_np)
+                    if isinstance(model, SafeGPBoostMulticlassClassifier):
+                        probs = model.predict_proba(X_te_p_np)
+                        if probs.shape[1] < len(all_classes_indices):
+                            full_probs = np.zeros((len(probs), len(all_classes_indices)))
+                            if hasattr(model._model, 'classes_'):
+                                full_probs[:, model._model.classes_] = probs
+                            else:
+                                full_probs[:, :probs.shape[1]] = probs
+                            probs = full_probs
+                        preds = np.argmax(probs, axis=1)
+                    else:
+                        preds = model.predict(X_te_p_np)
                     val = evaluate_accuracy(y_te_arr, preds)
 
                 records.append({
