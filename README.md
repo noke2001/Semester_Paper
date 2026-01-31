@@ -43,6 +43,22 @@ wget -O smac_sampler.py https://raw.githubusercontent.com/optuna/optunahub-regis
 from smac_sampler import SMACSampler
 ```
 
+### (iii) Install DRF package
+Before running the adv exerpiments/suites, we have to use the helper function install_drf.py.
+Either do this in the apptainer, by launching the shell:
+```bash
+apptainer shell SMAC_optuna.sif
+>>> python3 ./main/helper_functions/install_drf.py
+```
+Or execute it directly in the shell:
+```bash
+apptainer exec SMAC_optuna.sif ./main/helper_functions/install_drf.py
+```
+Make sure that the output reads:
+```bash
+>>> Verification: Library loads successfully.
+```
+
 ## Phase 2 (Compute Node):
 ### The SLURM Scripts: 
 All the pre-made scripts can all be found in the ./Batch_Scripts directory.

@@ -1,5 +1,5 @@
 import warnings
-from drf import drf
+from src.models.drf.code import drf
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -11,6 +11,11 @@ from lightgbmlss.model import LightGBMLSS
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.base import BaseEstimator, RegressorMixin, ClassifierMixin
+
+from rpy2.robjects import numpy2ri, pandas2ri, default_converter
+from rpy2.robjects.conversion import localconverter
+
+combined_converter = default_converter + numpy2ri.converter + pandas2ri.converter
 
 # ——————————————
 # Regression wrappers
@@ -39,7 +44,8 @@ class DistributionalRandomForestRegressor:
 
     def predict_quantiles(self, X, quantiles):
         if self._model is None: raise RuntimeError("Model not fitted.")
-        return self._model.predict(newdata=X, functional="quantile", quantiles=quantiles)
+        with localconverter(combined_converter):
+            return self._model.predict(newdata=X, functional="quantile", quantiles=quantiles)
 
     def predict(self, X):
         q = self.predict_quantiles(X, quantiles=[0.5])

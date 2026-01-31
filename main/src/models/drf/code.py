@@ -2,14 +2,16 @@ import pandas as pd
 import numpy as np
 
 import rpy2.robjects as ro
-import rpy2.robjects.numpy2ri
-rpy2.robjects.numpy2ri.activate()
+from rpy2.robjects import numpy2ri
 from rpy2.robjects import pandas2ri
-pandas2ri.activate()
+from rpy2.robjects.conversion import localconverter
 
 from rpy2.robjects.packages import importr
 base_r_package = importr('base')
 drf_r_package = importr('drf')
+
+# Create a combined converter for use in context managers
+combined_converter = ro.default_converter + pandas2ri.converter + numpy2ri.converter
 
 def convert_to_df(X):
     if type(X) == np.ndarray:
@@ -70,32 +72,11 @@ class drf:
         self.X_train = X
         self.Y_train = Y
 
-        X_r = ro.conversion.py2rpy(X)
-        Y_r = ro.conversion.py2rpy(Y)
+        with localconverter(combined_converter):
+            X_r = ro.conversion.py2rpy(X)
+            Y_r = ro.conversion.py2rpy(Y)
 
-        print("[Python drf wrapper] About to call R drf() function.")
-        print(f"[Python drf wrapper] X_r type: {type(X_r)}, Y_r type: {type(Y_r)}")
-        try:
-            r_result = drf_r_package.drf(X_r, Y_r, **self.fit_params)
-            print("[Python drf wrapper] R drf() call completed.")
-            print(f"[Python drf wrapper]   Type of r_result from Python's perspective: {type(r_result)}")
-            if r_result is not None and r_result != ro.NULL:
-                print(f"[Python drf wrapper]   R class of r_result: {base_r_package.class_(r_result)}")
-                # You could even try to print a summary or names of the R object
-                # print(base_r_package.summary(r_result))
-                # print(base_r_package.names(r_result))
-            elif r_result == ro.NULL:
-                print("[Python drf wrapper] ERROR: R drf() function returned R NULL.")
-            else:
-                print("[Python drf wrapper] WARNING: R drf() function returned Python None.")
-
-            self.r_fit_object = r_result
-            print("[Python drf wrapper] self.r_fit_object has been set.")
-
-        except Exception as e:
-            print(f"[Python drf wrapper] EXCEPTION during R drf() call: {e}")
-            # Depending on Optuna, you might want to re-raise or return a failure indicator
-            raise 
+            self.r_fit_object = drf_r_package.drf(X_r, Y_r, **self.fit_params) 
     def info(self): # ok
         drf_r_package.print_drf(self.r_fit_object)
     
@@ -110,8 +91,9 @@ class drf:
     
     def predict(self, newdata, **predict_params): #ok
         newdata = convert_to_df(newdata)
-        newdata_r = ro.conversion.py2rpy(newdata)
-        r_output = drf_r_package.predict_drf(self.r_fit_object, newdata_r)
+        with localconverter(combined_converter):
+            newdata_r = ro.conversion.py2rpy(newdata)
+            r_output = drf_r_package.predict_drf(self.r_fit_object, newdata_r)
         #print(len(r_output))
         #print(type(rpy2.robjects.conversion.ri2py(r_output[0])))
         #print(type(r_output))

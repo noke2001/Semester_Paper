@@ -93,6 +93,23 @@ import lightgbm as lgb
 from lightgbmlss.distributions.Gaussian import Gaussian
 from lightgbmlss.model import LightGBMLSS
 
+# --- 4b. R CONVERSION HELPERS ---
+def to_r_matrix(np_array):
+    """Convert numpy array to R matrix using rpy2."""
+    if not RPY2_AVAILABLE or not numpy2ri:
+        return np_array
+    with localconverter(n2r.converter):
+        return n2r.py2rpy(np_array)
+
+def to_r_vector(np_array):
+    """Convert numpy array to R vector using rpy2."""
+    if not RPY2_AVAILABLE:
+        return np_array
+    if isinstance(np_array, np.ndarray):
+        return FloatVector(np_array.astype(float))
+    else:
+        return FloatVector(np_array)
+
 # --- 5. INLINE MODEL DEFINITIONS (BYPASSING EXTERNAL FILE ISSUES) ---
 
 class SafeGPBoostRegressor:
@@ -277,7 +294,7 @@ def get_gpboost_space(n_samples):
     return {
         "cov_function": CategoricalDistribution(["matern", "gaussian"]),
         "cov_fct_shape": CategoricalDistribution([0.5, 1.5, 2.5]),
-        
+
         "num_neighbors": IntDistribution(lower_bound, upper_bound)
     }
 
@@ -429,26 +446,24 @@ def main():
             model = DistributionalRandomForestRegressor(**params)
             
             with redirect_stdout_to_stderr():
-                if RPY2_AVAILABLE and localconverter:
-                    r_x_tr = to_r_matrix(X_train_np)
-                    r_y_tr = to_r_vector(y_train_)
-                    r_x_val = to_r_matrix(X_val_np)
-                    r_q = to_r_vector(quantiles)
-                    model.fit(r_x_tr, r_y_tr)
-                    y_q = model.predict_quantiles(r_x_val, quantiles=r_q)
-                    del r_x_tr, r_y_tr, r_x_val, r_q
-                else:
-                    model.fit(X_train_np, y_train_)
-                    y_q = model.predict_quantiles(X_val_np, quantiles=quantiles)
+                # Ensure clean numpy arrays
+                X_train_clean = X_train_np.detach().cpu().numpy() if hasattr(X_train_np, 'detach') else np.ascontiguousarray(X_train_np)
+                X_val_clean = X_val_np.detach().cpu().numpy() if hasattr(X_val_np, 'detach') else np.ascontiguousarray(X_val_np)
+                y_train_clean = y_train_.detach().cpu().numpy() if hasattr(y_train_, 'detach') else y_train_
+                y_train_clean = np.ascontiguousarray(y_train_clean).ravel().astype(float)
+                
+                # DRF handles R conversion internally - just pass numpy arrays
+                model.fit(X_train_clean, y_train_clean)
+                y_q = model.predict_quantiles(X_val_clean, quantiles=quantiles)
             
-            if trial.number % 10 == 0: robjects.r('gc()')
+            if trial.number % 10 == 0 and RPY2_AVAILABLE: robjects.r('gc()')
             vals = crps_ensemble(y_val, y_q.quantile.squeeze(1))
             return float(np.mean(vals))
 
         def get_lgbm_params(trial):
             return {
                 'learning_rate': trial.suggest_float('learning_rate', 0.001, 1.0, log=True),
-                'min_child_samples': trial.suggest_int('min_child_samples', 1, 1000, log=True),
+                'min_child_samples': trial.suggest_int('min_child_samples', 10, 100),
                 'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 1000.0, log=True),
                 'max_bin': trial.suggest_int('max_bin', 255, max(256, n_samples_train), log=True),
                 'subsample': trial.suggest_float('subsample', 0.5, 1.0),
@@ -494,7 +509,8 @@ def main():
                 with redirect_stdout_to_stderr():
                     model.fit(X_train_np, y_train_)
                 mu, var = model.predict(X_val_np, return_var=True)
-                score = evaluate_crps(y_val, mu, np.sqrt(var))
+                var_clean = np.maximum(var, 0) # clamped to avoid negatives
+                score = evaluate_crps(y_val, mu, np.sqrt(var_clean))
                 del model; gc.collect()
                 return score
             except Exception: return float('inf')
