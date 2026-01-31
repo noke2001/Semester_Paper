@@ -17,21 +17,23 @@ PROJECT_ROOT="./main"
 ABS_ROOT=$(readlink -f "$PROJECT_ROOT")
 
 # --- THREADING CONFIGURATION ---
-export OMP_NUM_THREADS=1 #$SLURM_CPUS_PER_TASK
-export MKL_NUM_THREADS=1 #$SLURM_CPUS_PER_TASK
-export OPENBLAS_NUM_THREADS=1 #$SLURM_CPUS_PER_TASK
-export R_SIGNAL_HANDLERS=0
+# export OMP_NUM_THREADS=1 #$SLURM_CPUS_PER_TASK
+# export MKL_NUM_THREADS=1 #$SLURM_CPUS_PER_TASK
+# export OPENBLAS_NUM_THREADS=1 #$SLURM_CPUS_PER_TASK
+# export R_SIGNAL_HANDLERS=0
 
 # --- Apptainer CMD ---
 # removed --nv flag for CPU only
-APP_CMD="apptainer exec --env SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK --bind /etc/OpenCL/vendors --bind "$ABS_ROOT:$ABS_ROOT" --cleanenv --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env XDG_CACHE_HOME=$CACHE_PATH --env NUMBA_CACHE_DIR=/tmp/numba_cache --env PYTHONPATH=$PROJECT_ROOT SMAC_optuna.sif python3"
+# APP_CMD="apptainer exec --env SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK --bind /etc/OpenCL/vendors --bind "$ABS_ROOT:$ABS_ROOT" --cleanenv --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env XDG_CACHE_HOME=$CACHE_PATH --env NUMBA_CACHE_DIR=/tmp/numba_cache --env PYTHONPATH=$PROJECT_ROOT SMAC_optuna.sif python3"
+APP_CMD="apptainer exec --bind /etc/OpenCL/vendors --bind "$ABS_ROOT:$ABS_ROOT" --cleanenv --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env XDG_CACHE_HOME=$CACHE_PATH --env NUMBA_CACHE_DIR=/tmp/numba_cache --env PYTHONPATH=$PROJECT_ROOT SMAC_optuna.sif python3"
+
 
 echo "--- Running Advanced Models Experiment (SMAC) ---"
 echo "Date: $(date)"
 echo "Task ID: $TASK_ID"
 echo "Suite ID: $SUITE_ID"
 echo "Node: $HOSTNAME"
-echo "CPUs allocated: $SLURM_CPUS_PER_TASK"
+# echo "CPUs allocated: $SLURM_CPUS_PER_TASK"
 
 $APP_CMD -u $PROJECT_ROOT/adv_trial_all_smac.py \
     --suite_id $SUITE_ID \

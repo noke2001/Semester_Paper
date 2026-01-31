@@ -18,11 +18,11 @@ from sklearn.model_selection import train_test_split
 from properscoring import crps_gaussian, crps_ensemble
 
 # --- 1. PRE-IMPORT FIXES ---
-os.environ['LOKY_MAX_CPU_COUNT'] = '1' 
-os.environ['JOBLIB_MULTIPROCESSING'] = '0'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
+# os.environ['LOKY_MAX_CPU_COUNT'] = '1' 
+# os.environ['JOBLIB_MULTIPROCESSING'] = '0'
+# os.environ['OMP_NUM_THREADS'] = '1'
+# os.environ['MKL_NUM_THREADS'] = '1'
+# os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 # --- 2. RPY2 SETUP ---
 RPY2_AVAILABLE = False

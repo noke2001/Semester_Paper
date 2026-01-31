@@ -42,19 +42,20 @@ fi
 
 # --- WORK IN PROGRESS ---
 # --- THREADING CONFIGURATION (CRITICAL FOR STABILITY) ---
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
-export OPENBLAS_NUM_THREADS=1
-export VECLIB_MAXIMUM_THREADS=1
-export NUMEXPR_NUM_THREADS=1
-export R_SIGNAL_HANDLERS=0
+# export OMP_NUM_THREADS=1
+# export MKL_NUM_THREADS=1
+# export OPENBLAS_NUM_THREADS=1
+# export VECLIB_MAXIMUM_THREADS=1
+# export NUMEXPR_NUM_THREADS=1
+# export R_SIGNAL_HANDLERS=0
 
 # --- APPTAINER SETUP ---
 # CPU-Only Mode (No --nv flag)
-APP_CMD="apptainer exec --env SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK --bind /etc/OpenCL/vendors --bind "$ABS_ROOT:$ABS_ROOT" --cleanenv --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env XDG_CACHE_HOME=$CACHE_PATH --env NUMBA_CACHE_DIR=/tmp/numba_cache --env PYTHONPATH=$PROJECT_ROOT SMAC_optuna.sif python3"
+# APP_CMD="apptainer exec --env SLURM_CPUS_PER_TASK=$SLURM_CPUS_PER_TASK --bind /etc/OpenCL/vendors --bind "$ABS_ROOT:$ABS_ROOT" --cleanenv --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env XDG_CACHE_HOME=$CACHE_PATH --env NUMBA_CACHE_DIR=/tmp/numba_cache --env PYTHONPATH=$PROJECT_ROOT SMAC_optuna.sif python3"
+APP_CMD="apptainer exec --bind /etc/OpenCL/vendors --bind "$ABS_ROOT:$ABS_ROOT" --cleanenv --env PYTHONNOUSERSITE=1 --env HF_HUB_OFFLINE=1 --env XDG_CACHE_HOME=$CACHE_PATH --env NUMBA_CACHE_DIR=/tmp/numba_cache --env PYTHONPATH=$PROJECT_ROOT SMAC_optuna.sif python3"
 
 echo "--- Starting Batch Run for Suite: $SUITE_ID_INPUT ---"
-echo "--- Mode: Advanced Models / CPU (4 Cores / Serial) ---"
+# echo "--- Mode: Advanced Models / CPU (4 Cores / Serial) ---"
 echo "--- Date: $(date) ---"
 
 # --- PARSE CSV AND EXECUTE ---
