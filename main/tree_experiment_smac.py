@@ -263,7 +263,8 @@ def main():
         def obj_logloss(trial, ModelClass):
              params = get_optim_params(trial, ModelClass, n_samples_train)
              model = ModelClass(**params); model.fit(X_train_np, y_train_arr)
-             return evaluate_log_loss(y_val_arr, model.predict_proba(X_val_np)[:, 1])
+             # return evaluate_log_loss(y_val_arr, model.predict_proba(X_val_np)[:, 1])
+             return evaluate_log_loss(y_val_arr, model.predict_proba(X_val_np))
 
         studies = {}
         
