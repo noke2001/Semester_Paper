@@ -310,104 +310,104 @@ def main():
         # ========================================
         # 1. ENGRESSION LOOP (COMMENTED OUT)
         # ========================================
-        # engression_space = get_engression_space()
-        # if is_reg:
-        #     metrics_to_run = [('RMSE', 'minimize'), ('CRPS', 'minimize')]
-        #     ModelCls = EngressionRegressor
-        # else:
-        #     metrics_to_run = [('Accuracy', 'maximize'), ('LogLoss', 'minimize')]
-        #     ModelCls = EngressionClassifier
+        engression_space = get_engression_space()
+        if is_reg:
+            metrics_to_run = [('RMSE', 'minimize'), ('CRPS', 'minimize')]
+            ModelCls = EngressionRegressor
+        else:
+            metrics_to_run = [('Accuracy', 'maximize'), ('LogLoss', 'minimize')]
+            ModelCls = EngressionClassifier
 
-        # for metric, direction in metrics_to_run:
-        #    tracker = ProgressTracker(m_idx, num_methods, N_TRIALS, "Engression", metric)
+        for metric, direction in metrics_to_run:
+           tracker = ProgressTracker(m_idx, num_methods, N_TRIALS, "Engression", metric)
 
-        #    def obj_engression(trial):
-        #        params = trial.params.copy()
-        #        try:
-        #            kwargs = {
-        #                "batch_size": BATCH_SIZE, "seed": args.seed, "device": DEVICE 
-        #            }
-        #            if not is_reg: kwargs["num_classes"] = num_classes
+           def obj_engression(trial):
+               params = trial.params.copy()
+               try:
+                   kwargs = {
+                       "batch_size": BATCH_SIZE, "seed": args.seed, "device": DEVICE 
+                   }
+                   if not is_reg: kwargs["num_classes"] = num_classes
 
-        #            model = ModelCls(**params, **kwargs)
-        #            model.fit(X_train_, y_train_)
+                   model = ModelCls(**params, **kwargs)
+                   model.fit(X_train_, y_train_)
 
-        #            score = np.nan
-        #            if metric == 'RMSE':
-        #                pred = model.predict(X_val)
-        #                score = evaluate_rmse(y_val, pred)
-        #            elif metric == 'CRPS':
-        #                y_val_samples = model.predict_samples(X_val, sample_size=N_SAMPLES).cpu().numpy()
-        #                crps_vals = [crps_ensemble(y_val[i], y_val_samples[i]) for i in range(len(y_val))]
-        #                score = float(np.mean(crps_vals))
-        #            elif metric == 'Accuracy':
-        #                preds = model.predict(X_val)
-        #                score = evaluate_accuracy(y_val, preds)
-        #            elif metric == 'LogLoss':
-        #                probs = model.predict_proba(X_val)
-        #                score = evaluate_log_loss(y_val, probs)
-        #             
-        #            if np.isnan(score) or np.isinf(score):
-        #                return float('inf') if direction == 'minimize' else float('-inf')
-        #            return score
+                   score = np.nan
+                   if metric == 'RMSE':
+                       pred = model.predict(X_val)
+                       score = evaluate_rmse(y_val, pred)
+                   elif metric == 'CRPS':
+                       y_val_samples = model.predict_samples(X_val, sample_size=N_SAMPLES).cpu().numpy()
+                       crps_vals = [crps_ensemble(y_val[i], y_val_samples[i]) for i in range(len(y_val))]
+                       score = float(np.mean(crps_vals))
+                   elif metric == 'Accuracy':
+                       preds = model.predict(X_val)
+                       score = evaluate_accuracy(y_val, preds)
+                   elif metric == 'LogLoss':
+                       probs = model.predict_proba(X_val)
+                       score = evaluate_log_loss(y_val, probs)
+                    
+                   if np.isnan(score) or np.isinf(score):
+                       return float('inf') if direction == 'minimize' else float('-inf')
+                   return score
 
-        #        except Exception as e:
-        #            return float('inf') if direction == 'minimize' else float('-inf')
+               except Exception as e:
+                   return float('inf') if direction == 'minimize' else float('-inf')
 
-        #    # Optimization
-        #    try:
-        #        sampler = SMACSampler(search_space=engression_space, n_trials=N_TRIALS, seed=args.seed)
-        #        study = optuna.create_study(sampler=sampler, direction=direction)
-        #        optuna.logging.set_verbosity(optuna.logging.WARNING)
-        #        study.optimize(obj_engression, n_trials=N_TRIALS, callbacks=[tracker.callback])
-        #    except Exception as e:
-        #        print(f"Optuna Engression failed: {e}")
-        #        continue
+           # Optimization
+           try:
+               sampler = SMACSampler(search_space=engression_space, n_trials=N_TRIALS, seed=args.seed)
+               study = optuna.create_study(sampler=sampler, direction=direction)
+               optuna.logging.set_verbosity(optuna.logging.WARNING)
+               study.optimize(obj_engression, n_trials=N_TRIALS, callbacks=[tracker.callback])
+           except Exception as e:
+               print(f"Optuna Engression failed: {e}")
+               continue
 
-        #    # Refit & Evaluate
-        #    try:
-        #        try:
-        #             best_params = study.best_params
-        #        except ValueError:
-        #             print(f"Skipping Engression ({metric}): All trials failed.")
-        #             continue
+           # Refit & Evaluate
+           try:
+               try:
+                    best_params = study.best_params
+               except ValueError:
+                    print(f"Skipping Engression ({metric}): All trials failed.")
+                    continue
 
-        #        kwargs = {
-        #             "batch_size": BATCH_SIZE, "seed": args.seed, "device": DEVICE
-        #        }
-        #        if not is_reg: kwargs["num_classes"] = num_classes
+               kwargs = {
+                    "batch_size": BATCH_SIZE, "seed": args.seed, "device": DEVICE
+               }
+               if not is_reg: kwargs["num_classes"] = num_classes
 
-        #        model = ModelCls(**best_params, **kwargs)
-        #        model.fit(X_tr_p, y_tr_arr)
+               model = ModelCls(**best_params, **kwargs)
+               model.fit(X_tr_p, y_tr_arr)
 
-        #        val_score = np.nan
-        #        if is_reg:
-        #            if metric == 'RMSE':
-        #                pred = model.predict(X_te_p)
-        #                val_score = evaluate_rmse(y_te_arr, pred)
-        #            elif metric == 'CRPS':
-        #                y_te_samples = model.predict_samples(X_te_p, sample_size=N_SAMPLES).cpu().numpy()
-        #                crps_vals = [crps_ensemble(y_te_arr[i], y_te_samples[i]) for i in range(len(y_te_arr))]
-        #                val_score = float(np.mean(crps_vals))
-        #        else:
-        #            if metric == 'Accuracy':
-        #                preds = model.predict(X_te_p)
-        #                val_score = evaluate_accuracy(y_te_arr, preds)
-        #            elif metric == 'LogLoss':
-        #                probs = model.predict_proba(X_te_p)
-        #                val_score = evaluate_log_loss(y_te_arr, probs)
-        #         
-        #        records.append({
-        #            "suite_id": args.suite_id, "task_id": args.task_id,
-        #            "split_method": name_split, "model": "Engression",
-        #            "metric": metric, "value": val_score
-        #        })
-        #    except Exception as e:
-        #        print(f"Refit failed for Engression ({metric}): {e}")
-        #     
-        #    del model, study
-        #    torch.cuda.empty_cache()
-        #    gc.collect()
+               val_score = np.nan
+               if is_reg:
+                   if metric == 'RMSE':
+                       pred = model.predict(X_te_p)
+                       val_score = evaluate_rmse(y_te_arr, pred)
+                   elif metric == 'CRPS':
+                       y_te_samples = model.predict_samples(X_te_p, sample_size=N_SAMPLES).cpu().numpy()
+                       crps_vals = [crps_ensemble(y_te_arr[i], y_te_samples[i]) for i in range(len(y_te_arr))]
+                       val_score = float(np.mean(crps_vals))
+               else:
+                   if metric == 'Accuracy':
+                       preds = model.predict(X_te_p)
+                       val_score = evaluate_accuracy(y_te_arr, preds)
+                   elif metric == 'LogLoss':
+                       probs = model.predict_proba(X_te_p)
+                       val_score = evaluate_log_loss(y_te_arr, probs)
+                
+               records.append({
+                   "suite_id": args.suite_id, "task_id": args.task_id,
+                   "split_method": name_split, "model": "Engression",
+                   "metric": metric, "value": val_score
+               })
+           except Exception as e:
+               print(f"Refit failed for Engression ({metric}): {e}")
+            
+           del model, study
+           torch.cuda.empty_cache()
+           gc.collect()
 
 
         # ----------------------------------------
@@ -416,11 +416,11 @@ def main():
         
         deep_models = []
         if is_reg:
-            # deep_models.append(("MLP", MLPRegressor, get_mlp_space())) # EXCLUDED
+            deep_models.append(("MLP", MLPRegressor, get_mlp_space()))
             deep_models.append(("ResNet", ResNetRegressor, get_resnet_space()))
             deep_models.append(("FTTransformer", FTTrans_Regressor, get_fttrans_space()))
         else:
-            # deep_models.append(("MLP", MLPClassifier, get_mlp_space())) # EXCLUDED
+            deep_models.append(("MLP", MLPClassifier, get_mlp_space()))
             deep_models.append(("ResNet", ResNetClassifier, get_resnet_space()))
             deep_models.append(("FTTransformer", FTTrans_Classifier, get_fttrans_space()))
 
